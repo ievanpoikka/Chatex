@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <stdlib.h>
+#include <pthread.h>
 
 struct sockaddr_in* CreateIPv4Address(char *ip, int port);
 

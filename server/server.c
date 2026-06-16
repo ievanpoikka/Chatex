@@ -5,6 +5,7 @@
 #define SERV_ADDR "127.0.0.1"
 #define SERV_PORT 22222
 #define LISTEN_BACKLOG 10
+#define MAX_CONNECTIONS 10
 
 struct acceptedConnection {
     int clientSockFD;
@@ -13,25 +14,36 @@ struct acceptedConnection {
     bool accepted;
 };
 
+void startAcceptingConnections(int serverSockFD);
 struct acceptedConnection* acceptIncomingConnections(int serverSockFD);
-void recvAndPrint(int clientSockFD);
+void recvAndPrintCreateSeparateThread(struct acceptedConnection *clientConnection);
+void *recvAndPrint(void *clientSockFD);
 
-void recvAndPrint(int clientSockFD) {
+void recvAndPrintCreateSeparateThread(struct acceptedConnection *clientConnection) {
+    pthread_t thread;
+    pthread_create(&thread, NULL, &recvAndPrint, (void *)(&clientConnection->clientSockFD));
+}
+
+void *recvAndPrint(void *clientSockFD) {
     char buf[4096];
 
     while (true) {
-        ssize_t recvCount = recv(clientSockFD, buf, sizeof(buf), 0);
+        ssize_t recvCount = recv(*(int *) clientSockFD, buf, sizeof(buf), 0);
 
         if (recvCount > 0) {
             buf[recvCount] = 0; // appending null byte to print
             printf("%s\n", buf);
         } else if (recvCount == 0) {
-            break;
+            break; // client has shutdown the connection
         } else {
             fprintf(stderr, "[E] Failure on receiving from client connection");
             break;
         }
     }
+    
+    puts("[Client Has Disconnected]");
+    pthread_detach(pthread_self());
+    return NULL;
 }
 
 struct acceptedConnection* acceptIncomingConnections(int serverSockFD) {
@@ -50,6 +62,20 @@ struct acceptedConnection* acceptIncomingConnections(int serverSockFD) {
     }
 
     return clientSocket;
+}
+
+struct acceptedConnection acceptedConnections[MAX_CONNECTIONS];
+int acceptedConnectionCount = 0;
+
+void startAcceptingConnections(int serverSockFD) {
+    while (true) {
+        struct acceptedConnection *clientConnection = acceptIncomingConnections(serverSockFD);
+        if (acceptedConnectionCount <= MAX_CONNECTIONS) {
+            acceptedConnections[acceptedConnectionCount++] = *clientConnection;
+
+            recvAndPrintCreateSeparateThread(clientConnection);
+        }
+    }
 }
 
 int main() {
@@ -77,8 +103,7 @@ int main() {
 
     int listenResult = listen(serverSockFD, LISTEN_BACKLOG);
     if (listenResult == 0) {
-        struct acceptedConnection *clientSocket = acceptIncomingConnections(serverSockFD);
-        recvAndPrint(clientSocket->clientSockFD);
+        startAcceptingConnections(serverSockFD);
     } else {
         fprintf(stderr, "[E] Error in listening for connections");
         free(serverAddress);

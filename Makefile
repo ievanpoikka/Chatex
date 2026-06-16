@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall -Wextra -Ilib
+CFLAGS=-Wall -Wextra -Ilib -pthread
 
 BUILD=build
 UTIL=lib/sock_lib.c
