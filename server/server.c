@@ -14,36 +14,67 @@ struct acceptedConnection {
     bool accepted;
 };
 
+struct acceptedConnection acceptedConnections[MAX_CONNECTIONS];
+int acceptedConnectionCount = 0;
+
 void startAcceptingConnections(int serverSockFD);
 struct acceptedConnection* acceptIncomingConnections(int serverSockFD);
 void recvAndPrintCreateSeparateThread(struct acceptedConnection *clientConnection);
 void *recvAndPrint(void *clientSockFD);
+void sendRecvToAllClients(char *buf, int clientSockFD);
+void sendInfoToClient(int clientSockFD);
 
-void recvAndPrintCreateSeparateThread(struct acceptedConnection *clientConnection) {
-    pthread_t thread;
-    pthread_create(&thread, NULL, &recvAndPrint, (void *)(&clientConnection->clientSockFD));
+void sendInfoToClient(int clientSockFD) {
+    char *info = "[Server has refused connection]";
+    ssize_t sendInfoCount = send(clientSockFD, info, strlen(info), 0);
+    if (sendInfoCount < 0) {
+        fprintf(stderr, "[E] Could not sent error data to client\n");
+    }
 }
 
-void *recvAndPrint(void *clientSockFD) {
+void sendRecvToAllClients(char *buf, int clientSockFD) {
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        if (acceptedConnections[i].accepted == true && acceptedConnections[i].clientSockFD != clientSockFD) {
+            ssize_t sentAmtCount = send(acceptedConnections[i].clientSockFD, buf, strlen(buf), 0);
+            if (sentAmtCount < 0) {
+                fprintf(stderr, "[E] Could not send to cliend with sockfd: %d\n", acceptedConnections[i].clientSockFD);
+            }
+        }
+    }
+}
+
+void *recvAndPrint(void *clientConnection) {
     char buf[4096];
+    struct acceptedConnection *clientConnectionCasted = (struct acceptedConnection *)clientConnection;
 
     while (true) {
-        ssize_t recvCount = recv(*(int *) clientSockFD, buf, sizeof(buf), 0);
+        ssize_t recvCount = recv(clientConnectionCasted->clientSockFD, buf, sizeof(buf), 0);
 
         if (recvCount > 0) {
             buf[recvCount] = 0; // appending null byte to print
             printf("%s\n", buf);
+
+            sendRecvToAllClients(buf, clientConnectionCasted->clientSockFD);
         } else if (recvCount == 0) {
             break; // client has shutdown the connection
         } else {
-            fprintf(stderr, "[E] Failure on receiving from client connection");
+            fprintf(stderr, "[E] Failure on receiving from client connection\n");
             break;
         }
     }
     
-    puts("[Client Has Disconnected]");
-    pthread_detach(pthread_self());
+    // make the current client connection attributes reusable
+    clientConnectionCasted->accepted = false;
+    acceptedConnectionCount--;
+
+    puts("[Client Has Disconnected]\n");
     return NULL;
+}
+
+void recvAndPrintCreateSeparateThread(struct acceptedConnection *clientConnection) {
+    pthread_t thread;
+    pthread_create(&thread, NULL, &recvAndPrint, (void *)clientConnection);
+    pthread_detach(thread);
 }
 
 struct acceptedConnection* acceptIncomingConnections(int serverSockFD) {
@@ -64,16 +95,26 @@ struct acceptedConnection* acceptIncomingConnections(int serverSockFD) {
     return clientSocket;
 }
 
-struct acceptedConnection acceptedConnections[MAX_CONNECTIONS];
-int acceptedConnectionCount = 0;
 
 void startAcceptingConnections(int serverSockFD) {
     while (true) {
         struct acceptedConnection *clientConnection = acceptIncomingConnections(serverSockFD);
         if (acceptedConnectionCount <= MAX_CONNECTIONS) {
-            acceptedConnections[acceptedConnectionCount++] = *clientConnection;
+            // TODO: fix the acceptedConnectionCount thingy
+            // acceptedConnectionCount only increases(when connections add)
+            // but doesn't decrease when connections leave
+            // POSSIBLE FIX: make acceptedConnections a circular array
+            for (int i = 0; i < MAX_CONNECTIONS; i++) {
+                if (acceptedConnections[i].accepted == false) {
+                    acceptedConnections[i] = *clientConnection;
+                    acceptedConnectionCount++;
+                }
+            }
 
             recvAndPrintCreateSeparateThread(clientConnection);
+        } else {
+            puts("[Max Client Connection Reached, Refused Connection]");
+            sendInfoToClient(clientConnection->clientSockFD);
         }
     }
 }
@@ -81,13 +122,13 @@ void startAcceptingConnections(int serverSockFD) {
 int main() {
     int serverSockFD = CreateTcpIPv4Socket();
     if (serverSockFD < 0) {
-        fprintf(stderr, "[E] Could not create IPv4 Socket");
+        fprintf(stderr, "[E] Could not create IPv4 Socket\n");
         exit(EXIT_FAILURE);
     }
 
     struct sockaddr_in *serverAddress = CreateIPv4Address("" /* listen on all interfaces */, SERV_PORT);
     if (serverAddress == NULL) {
-        fprintf(stderr, "[E] IPv4 Address creation failure");
+        fprintf(stderr, "[E] IPv4 Address creation failure\n");
         exit(EXIT_FAILURE);
     }
 
@@ -95,7 +136,7 @@ int main() {
     if (bound == 0) {
         puts("Socket successfully bound");
     } else {
-        fprintf(stderr, "[E] Socket could not be bound");
+        fprintf(stderr, "[E] Socket could not be bound\n");
         free(serverAddress);
         close(serverSockFD);
         exit(EXIT_FAILURE);
@@ -105,7 +146,7 @@ int main() {
     if (listenResult == 0) {
         startAcceptingConnections(serverSockFD);
     } else {
-        fprintf(stderr, "[E] Error in listening for connections");
+        fprintf(stderr, "[E] Error in listening for connections\n");
         free(serverAddress);
         close(serverSockFD);
         exit(EXIT_FAILURE);

@@ -5,9 +5,46 @@
 #define SERV_ADDR "127.0.0.1"
 #define SERV_PORT 22222
 #define TERM_STR "exit\n"
+#define SERVER_TERM_STR "[Server has refused connection]" 
 
 void readAndSendToServer(int sockfd);
-void listenAndPrint(int sockfd);
+void listenAndPrintCreateThread(int sockfd);
+void *listenAndPrint(void *sockfd);
+
+void listenAndPrintCreateThread(int sockfd) {
+    pthread_t thread;
+    pthread_create(&thread, NULL, &listenAndPrint, (void *) &sockfd);
+}
+
+void *listenAndPrint(void *sockfd) {
+    char buf[4096];
+    int sockfd_int = *(int *) sockfd;
+
+    while (true) {
+        ssize_t recvCount = recv(sockfd_int, buf, sizeof(buf), 0);
+
+        if (recvCount > 0) {
+            buf[recvCount] = 0; // appending null byte to print
+            printf("%s\n", buf);
+
+            if ((strncmp(buf, SERVER_TERM_STR, strlen(SERVER_TERM_STR))) == 0) {
+                puts("[Client Shutting Down...]\nPress Enter to exit...");
+                write(STDIN_FILENO, "\n", 1);
+                close(sockfd_int);
+                close(STDIN_FILENO);
+                exit(EXIT_FAILURE);
+            }
+        } else if (recvCount == 0) {
+            break; // server has refused/shutdown the connection?
+        } else {
+            fprintf(stderr, "[E] Failure on receiving from server\n");
+            break;
+        }
+    }
+    
+    puts("[Disconnected From Server]");
+    return NULL;
+}
 
 void readAndSendToServer(int sockfd) {
     char *buf = NULL;
@@ -22,40 +59,27 @@ void readAndSendToServer(int sockfd) {
 
             ssize_t sentAmtCount = send(sockfd, buf, strlen(buf), 0);
             if (strlen(buf) > 0 && sentAmtCount == 0) {
-                fprintf(stderr, "[E] No data sent");
+                fprintf(stderr, "[E] No data sent\n");
             }
             if (sentAmtCount < 0) {
-                fprintf(stderr, "[E] Could not send data");
+                fprintf(stderr, "[E] Could not send data\n");
             }
         }
     }
-}
 
-void listenAndPrint(int sockfd) {
-    char buf[4096];
-    ssize_t recvCount = recv(sockfd, buf, sizeof(buf), 0);
-
-    if (recvCount > 0) {
-        buf[recvCount] = 0; // appending null byte to print
-        printf("%s\n", buf);
-    } else if (recvCount < 0) {
-        fprintf(stderr, "[E] Error in receiving data");
-    }
-    else {
-        fprintf(stderr, "[I] No Data Received");
-    }
+    free(buf);
 }
 
 int main() {
     int sockfd = CreateTcpIPv4Socket();
     if (sockfd < 0) {
-        fprintf(stderr, "[E] Could not create IPv4 Socket");
+        fprintf(stderr, "[E] Could not create IPv4 Socket\n");
         exit(EXIT_FAILURE);
     }
 
     struct sockaddr_in *address = CreateIPv4Address(SERV_ADDR, SERV_PORT);
     if (address == NULL) {
-        fprintf(stderr, "[E] IPv4 Address creation failure");
+        fprintf(stderr, "[E] IPv4 Address creation failure\n");
         exit(EXIT_FAILURE);
     }
 
@@ -66,18 +90,19 @@ int main() {
             puts("Connection successfully establised");
             break;
         } else {
-            fprintf(stderr, "[E] Connection Failed, trying again");
+            fprintf(stderr, "[E] Connection Failed, trying again\n");
         }
         sleep(1);
     }
     
     if (connectTry == 3) {
-        fprintf(stderr, "[E] Failed to connect to remote server, fatal error");
+        fprintf(stderr, "[E] Failed to connect to remote server, fatal error\n");
         free(address);
         close(sockfd);
         exit(EXIT_FAILURE);
     }
 
+    listenAndPrintCreateThread(sockfd);
     readAndSendToServer(sockfd);
 
     free(address);
