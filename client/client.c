@@ -22,10 +22,10 @@ void readAndSendToServer(int sockfd) {
 
             ssize_t sentAmtCount = send(sockfd, buf, strlen(buf), 0);
             if (strlen(buf) > 0 && sentAmtCount == 0) {
-                puts("[E] No data sent");
+                fprintf(stderr, "[E] No data sent");
             }
             if (sentAmtCount < 0) {
-                puts("[E] Could not send data");
+                fprintf(stderr, "[E] Could not send data");
             }
         }
     }
@@ -39,23 +39,23 @@ void listenAndPrint(int sockfd) {
         buf[recvCount] = 0; // appending null byte to print
         printf("%s\n", buf);
     } else if (recvCount < 0) {
-        puts("[E] Error in receiving data");
+        fprintf(stderr, "[E] Error in receiving data");
     }
     else {
-        puts("[I] No Data Received");
+        fprintf(stderr, "[I] No Data Received");
     }
 }
 
 int main() {
     int sockfd = CreateTcpIPv4Socket();
     if (sockfd < 0) {
-        puts("[E] Could not create IPv4 Socket");
+        fprintf(stderr, "[E] Could not create IPv4 Socket");
         exit(EXIT_FAILURE);
     }
 
     struct sockaddr_in *address = CreateIPv4Address(SERV_ADDR, SERV_PORT);
     if (address == NULL) {
-        puts("[E] IPv4 Address creation failure");
+        fprintf(stderr, "[E] IPv4 Address creation failure");
         exit(EXIT_FAILURE);
     }
 
@@ -66,13 +66,13 @@ int main() {
             puts("Connection successfully establised");
             break;
         } else {
-            puts("[E] Connection Failed, trying again");
+            fprintf(stderr, "[E] Connection Failed, trying again");
         }
         sleep(1);
     }
     
     if (connectTry == 3) {
-        puts("[E] Failed to connect to remote server, fatal error");
+        fprintf(stderr, "[E] Failed to connect to remote server, fatal error");
         free(address);
         close(sockfd);
         exit(EXIT_FAILURE);
