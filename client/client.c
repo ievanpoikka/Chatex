@@ -6,6 +6,7 @@
 #define SERV_PORT 22222
 #define TERM_STR "exit\n"
 #define SERVER_TERM_STR "[Server has refused connection]" 
+#define MAX_USERNAME_LEN 50
 
 void readAndSendToServer(int sockfd);
 void listenAndPrintCreateThread(int sockfd);
@@ -26,7 +27,7 @@ void *listenAndPrint(void *sockfd) {
 
         if (recvCount > 0) {
             buf[recvCount] = 0; // appending null byte to print
-            printf("%s\n", buf);
+            printf("\n%s\n", buf);
 
             if ((strncmp(buf, SERVER_TERM_STR, strlen(SERVER_TERM_STR))) == 0) {
                 puts("[Client Shutting Down...]\nPress Enter to exit...");
@@ -48,9 +49,34 @@ void *listenAndPrint(void *sockfd) {
 }
 
 void readAndSendToServer(int sockfd) {
+    char *name = NULL;
+    size_t nameSize = 0;
+    int nameLen = 0;
+
+    do { 
+        printf("Please enter your name: ");
+        ssize_t nameReadCount = getline(&name, &nameSize, stdin);
+        name[nameReadCount - 1] = 0;
+        nameLen = strlen(name);
+        if (nameLen <= 1 || nameLen >= MAX_USERNAME_LEN) {
+            puts("Invalid: Name length should be greater than 1 and less then 50");
+            continue;
+        }
+    } while (nameLen <= 1 || nameLen >= MAX_USERNAME_LEN); 
+
+    ssize_t nameSentCount = send(sockfd, name, nameLen, 0);
+    if (nameLen > 0 && nameSentCount == 0) {
+        fprintf(stderr, "[E] Username was not sent, connection lost\n");
+    }
+    if (nameSentCount < 0) {
+        fprintf(stderr, "[E] Could not Username\n");
+    }
+
+
     char *buf = NULL;
     size_t bufsize;
     while (true) {
+        printf("You [%s]: ", name);
         ssize_t readCount = getline(&buf, &bufsize, stdin);
         
         if (readCount > 0) {
@@ -68,6 +94,7 @@ void readAndSendToServer(int sockfd) {
         }
     }
 
+    free(name);
     free(buf);
 }
 

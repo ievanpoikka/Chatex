@@ -6,9 +6,12 @@
 #define SERV_PORT 22222
 #define LISTEN_BACKLOG 10
 #define MAX_CONNECTIONS 10
+#define MAX_USERNAME_LEN 50
+#define MAX_RECV_BUF_SIZE 4096
 
 struct acceptedConnection {
     int clientSockFD;
+    char name[MAX_USERNAME_LEN];
     struct sockaddr_in addr;
     int error;
     bool accepted;
@@ -21,8 +24,20 @@ void startAcceptingConnections(int serverSockFD);
 struct acceptedConnection* acceptIncomingConnections(int serverSockFD);
 void recvAndPrintCreateSeparateThread(struct acceptedConnection *clientConnection);
 void *recvAndPrint(void *clientSockFD);
-void sendRecvToAllClients(char *buf, int clientSockFD);
+void sendRecvToAllClients(char *buf, struct acceptedConnection *clientConnection);
 void sendInfoToClient(int clientSockFD);
+void recvAndSetUsername(struct acceptedConnection *clientConnection);
+
+void recvAndSetUsername(struct acceptedConnection *clientConnection) {
+    char usernameBuf[MAX_USERNAME_LEN];
+    ssize_t recvUsernameCount = recv(clientConnection->clientSockFD, usernameBuf, (MAX_USERNAME_LEN - 1), 0); // -1 to leave space for null byte
+    if (recvUsernameCount > 0) {
+        usernameBuf[((recvUsernameCount < MAX_USERNAME_LEN)? recvUsernameCount: (MAX_USERNAME_LEN - 1))] = 0; // set last byte to NULL
+        snprintf(clientConnection->name, MAX_USERNAME_LEN, "%s", usernameBuf);
+    } else {
+        fprintf(stderr, "[E] Could not receive username from client\n");
+    }
+}
 
 void sendInfoToClient(int clientSockFD) {
     char *info = "[Server has refused connection]";
@@ -32,10 +47,12 @@ void sendInfoToClient(int clientSockFD) {
     }
 }
 
-void sendRecvToAllClients(char *buf, int clientSockFD) {
+void sendRecvToAllClients(char *recvBuf, struct acceptedConnection *clientConnection) {
+    char bufWithUsername [MAX_RECV_BUF_SIZE + MAX_USERNAME_LEN];
+    snprintf(bufWithUsername, (MAX_RECV_BUF_SIZE + MAX_USERNAME_LEN), "%s: %s", clientConnection->name, recvBuf);
     for (int i = 0; i < MAX_CONNECTIONS; i++) {
-        if (acceptedConnections[i].accepted == true && acceptedConnections[i].clientSockFD != clientSockFD) {
-            ssize_t sentAmtCount = send(acceptedConnections[i].clientSockFD, buf, strlen(buf), 0);
+        if (acceptedConnections[i].accepted == true && acceptedConnections[i].clientSockFD != clientConnection->clientSockFD) {
+            ssize_t sentAmtCount = send(acceptedConnections[i].clientSockFD, bufWithUsername, strlen(bufWithUsername), 0);
             if (sentAmtCount < 0) {
                 fprintf(stderr, "[E] Could not send to cliend with sockfd: %d\n", acceptedConnections[i].clientSockFD);
             }
@@ -44,17 +61,17 @@ void sendRecvToAllClients(char *buf, int clientSockFD) {
 }
 
 void *recvAndPrint(void *clientConnection) {
-    char buf[4096];
+    char recvBuf[MAX_RECV_BUF_SIZE];
     struct acceptedConnection *clientConnectionCasted = (struct acceptedConnection *)clientConnection;
 
     while (true) {
-        ssize_t recvCount = recv(clientConnectionCasted->clientSockFD, buf, sizeof(buf), 0);
+        ssize_t recvCount = recv(clientConnectionCasted->clientSockFD, recvBuf, MAX_RECV_BUF_SIZE, 0);
 
         if (recvCount > 0) {
-            buf[recvCount] = 0; // appending null byte to print
-            printf("%s\n", buf);
+            recvBuf[recvCount] = 0; // appending null byte to print
+            printf("%s: %s\n", clientConnectionCasted->name, recvBuf);
 
-            sendRecvToAllClients(buf, clientConnectionCasted->clientSockFD);
+            sendRecvToAllClients(recvBuf, clientConnectionCasted);
         } else if (recvCount == 0) {
             break; // client has shutdown the connection
         } else {
@@ -72,7 +89,8 @@ void *recvAndPrint(void *clientConnection) {
     }
     acceptedConnectionCount--;
 
-    puts("[Client Has Disconnected]\n");
+    printf("[%s] has disconnected\n", clientConnectionCasted->name);
+    sendRecvToAllClients("[has left the conversation]", clientConnectionCasted);
     return NULL;
 }
 
@@ -109,6 +127,10 @@ void startAcceptingConnections(int serverSockFD) {
                 if (acceptedConnections[i].accepted == false) {
                     acceptedConnections[i] = *clientConnection;
                     acceptedConnectionCount++;
+
+                    recvAndSetUsername(clientConnection);
+                    printf("[%s] has connected to the server\n", clientConnection->name);
+                    sendRecvToAllClients("[has joined the conversation]", clientConnection);
                     break;
                 }
 
