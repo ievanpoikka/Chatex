@@ -14,6 +14,7 @@ void *listenAndPrint(void *sockfd);
 void listenAndPrintCreateThread(int sockfd) {
     pthread_t thread;
     pthread_create(&thread, NULL, &listenAndPrint, (void *) &sockfd);
+    pthread_detach(thread);
 }
 
 void *listenAndPrint(void *sockfd) {
@@ -42,7 +43,7 @@ void *listenAndPrint(void *sockfd) {
         }
     }
     
-    puts("[Disconnected From Server]");
+    puts("[Disconnected From Server]\nPress Enter to exit...");
     return NULL;
 }
 

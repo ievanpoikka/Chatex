@@ -65,6 +65,11 @@ void *recvAndPrint(void *clientConnection) {
     
     // make the current client connection attributes reusable
     clientConnectionCasted->accepted = false;
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        if (acceptedConnections[i].clientSockFD == clientConnectionCasted->clientSockFD) {
+            acceptedConnections[i].accepted = false;
+        }
+    }
     acceptedConnectionCount--;
 
     puts("[Client Has Disconnected]\n");
@@ -95,20 +100,18 @@ struct acceptedConnection* acceptIncomingConnections(int serverSockFD) {
     return clientSocket;
 }
 
-
 void startAcceptingConnections(int serverSockFD) {
     while (true) {
         struct acceptedConnection *clientConnection = acceptIncomingConnections(serverSockFD);
-        if (acceptedConnectionCount <= MAX_CONNECTIONS) {
+        if (acceptedConnectionCount < MAX_CONNECTIONS) {
             // TODO: fix the acceptedConnectionCount thingy
-            // acceptedConnectionCount only increases(when connections add)
-            // but doesn't decrease when connections leave
-            // POSSIBLE FIX: make acceptedConnections a circular array
             for (int i = 0; i < MAX_CONNECTIONS; i++) {
                 if (acceptedConnections[i].accepted == false) {
                     acceptedConnections[i] = *clientConnection;
                     acceptedConnectionCount++;
+                    break;
                 }
+
             }
 
             recvAndPrintCreateSeparateThread(clientConnection);
@@ -116,6 +119,10 @@ void startAcceptingConnections(int serverSockFD) {
             puts("[Max Client Connection Reached, Refused Connection]");
             sendInfoToClient(clientConnection->clientSockFD);
         }
+                // print acceptedConnections array
+            for (int i = 0; i < MAX_CONNECTIONS; i++) {
+                printf("%d. %s\n", i, (acceptedConnections[i].accepted? "true": "false"));
+            }
     }
 }
 
