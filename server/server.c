@@ -119,10 +119,6 @@ void startAcceptingConnections(int serverSockFD) {
             puts("[Max Client Connection Reached, Refused Connection]");
             sendInfoToClient(clientConnection->clientSockFD);
         }
-                // print acceptedConnections array
-            for (int i = 0; i < MAX_CONNECTIONS; i++) {
-                printf("%d. %s\n", i, (acceptedConnections[i].accepted? "true": "false"));
-            }
     }
 }
 
