@@ -9,6 +9,9 @@
 #define MAX_USERNAME_LEN 50
 #define MAX_RECV_BUF_SIZE 4096
 
+#define SERVER_TERM_STR "[Server has refused connection]"
+#define DUPLICATE_USERNAME "[Username already exists]"
+
 struct acceptedConnection {
     int clientSockFD;
     char name[MAX_USERNAME_LEN];
@@ -25,22 +28,28 @@ struct acceptedConnection* acceptIncomingConnections(int serverSockFD);
 void recvAndPrintCreateSeparateThread(struct acceptedConnection *clientConnection);
 void *recvAndPrint(void *clientSockFD);
 void sendRecvToAllClients(char *buf, struct acceptedConnection *clientConnection);
-void sendInfoToClient(int clientSockFD);
-void recvAndSetUsername(struct acceptedConnection *clientConnection);
+void sendInfoToClient(char *info, int clientSockFD);
+bool recvAndSetUsername(struct acceptedConnection *clientConnection);
 
-void recvAndSetUsername(struct acceptedConnection *clientConnection) {
+bool recvAndSetUsername(struct acceptedConnection *clientConnection) {
     char usernameBuf[MAX_USERNAME_LEN];
     ssize_t recvUsernameCount = recv(clientConnection->clientSockFD, usernameBuf, (MAX_USERNAME_LEN - 1), 0); // -1 to leave space for null byte
     if (recvUsernameCount > 0) {
         usernameBuf[((recvUsernameCount < MAX_USERNAME_LEN)? recvUsernameCount: (MAX_USERNAME_LEN - 1))] = 0; // set last byte to NULL
+        for (int i = 0; i < acceptedConnectionCount; i++) {
+            if (strncmp(acceptedConnections[i].name, usernameBuf, strlen(acceptedConnections[i].name)) == 0) {
+                sendInfoToClient(DUPLICATE_USERNAME, clientConnection->clientSockFD);
+                return false;
+            }
+        }
         snprintf(clientConnection->name, MAX_USERNAME_LEN, "%s", usernameBuf);
     } else {
         fprintf(stderr, "[E] Could not receive username from client\n");
     }
+    return true;
 }
 
-void sendInfoToClient(int clientSockFD) {
-    char *info = "[Server has refused connection]";
+void sendInfoToClient(char *info, int clientSockFD) {
     ssize_t sendInfoCount = send(clientSockFD, info, strlen(info), 0);
     if (sendInfoCount < 0) {
         fprintf(stderr, "[E] Could not sent error data to client\n");
@@ -50,7 +59,9 @@ void sendInfoToClient(int clientSockFD) {
 void sendRecvToAllClients(char *recvBuf, struct acceptedConnection *clientConnection) {
     char bufWithUsername [MAX_RECV_BUF_SIZE + MAX_USERNAME_LEN];
     snprintf(bufWithUsername, (MAX_RECV_BUF_SIZE + MAX_USERNAME_LEN), "%s: %s", clientConnection->name, recvBuf);
+
     for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        // send received data to everyone except who sent it
         if (acceptedConnections[i].accepted == true && acceptedConnections[i].clientSockFD != clientConnection->clientSockFD) {
             ssize_t sentAmtCount = send(acceptedConnections[i].clientSockFD, bufWithUsername, strlen(bufWithUsername), 0);
             if (sentAmtCount < 0) {
@@ -65,7 +76,25 @@ void *recvAndPrint(void *clientConnection) {
     struct acceptedConnection *clientConnectionCasted = (struct acceptedConnection *)clientConnection;
 
     while (true) {
-        ssize_t recvCount = recv(clientConnectionCasted->clientSockFD, recvBuf, MAX_RECV_BUF_SIZE, 0);
+       ssize_t recvCount = recv(clientConnectionCasted->clientSockFD, recvBuf, MAX_RECV_BUF_SIZE - 1, 0); // -1 for null byte
+
+        // skip if client send a newline
+        recvBuf[strcspn(recvBuf, "\n")] = 0;
+        if (recvBuf[0] == 0) {
+            continue;
+        }
+
+        // skip if client sends all whitespace
+        bool onlyWhitespace = true;
+        for (int i = 0; recvBuf[i] != 0; i++) {
+            if (!isspace((unsigned char) recvBuf[i])) {
+                onlyWhitespace = false;
+                break;
+            }
+        }
+        if (onlyWhitespace) {
+            continue;
+        }
 
         if (recvCount > 0) {
             recvBuf[recvCount] = 0; // appending null byte to print
@@ -122,13 +151,21 @@ void startAcceptingConnections(int serverSockFD) {
     while (true) {
         struct acceptedConnection *clientConnection = acceptIncomingConnections(serverSockFD);
         if (acceptedConnectionCount < MAX_CONNECTIONS) {
-            // TODO: fix the acceptedConnectionCount thingy
+
+            // if client sends a username that already exists, terminate connection
+            if (!recvAndSetUsername(clientConnection)) {
+                puts("[Client send duplicate username, Refused Connection]");
+                continue;
+            }
+
+            // find place to put new client in the connections array
+            // TODO
+            // improve the below checking functionality
             for (int i = 0; i < MAX_CONNECTIONS; i++) {
                 if (acceptedConnections[i].accepted == false) {
                     acceptedConnections[i] = *clientConnection;
                     acceptedConnectionCount++;
 
-                    recvAndSetUsername(clientConnection);
                     printf("[%s] has connected to the server\n", clientConnection->name);
                     sendRecvToAllClients("[has joined the conversation]", clientConnection);
                     break;
@@ -139,7 +176,7 @@ void startAcceptingConnections(int serverSockFD) {
             recvAndPrintCreateSeparateThread(clientConnection);
         } else {
             puts("[Max Client Connection Reached, Refused Connection]");
-            sendInfoToClient(clientConnection->clientSockFD);
+            sendInfoToClient(SERVER_TERM_STR, clientConnection->clientSockFD);
         }
     }
 }

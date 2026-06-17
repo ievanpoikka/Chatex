@@ -7,6 +7,7 @@
 #define TERM_STR "exit\n"
 #define SERVER_TERM_STR "[Server has refused connection]" 
 #define MAX_USERNAME_LEN 50
+#define DUPLICATE_USERNAME "[Username already exists]"
 
 void readAndSendToServer(int sockfd);
 void listenAndPrintCreateThread(int sockfd);
@@ -29,7 +30,9 @@ void *listenAndPrint(void *sockfd) {
             buf[recvCount] = 0; // appending null byte to print
             printf("\n%s\n", buf);
 
-            if ((strncmp(buf, SERVER_TERM_STR, strlen(SERVER_TERM_STR))) == 0) {
+            if ((strncmp(buf, SERVER_TERM_STR, strlen(SERVER_TERM_STR))) == 0
+             || (strncmp(buf, DUPLICATE_USERNAME, strlen(DUPLICATE_USERNAME)) == 0)
+            ) {
                 puts("[Client Shutting Down...]\nPress Enter to exit...");
                 write(STDIN_FILENO, "\n", 1);
                 close(sockfd_int);
