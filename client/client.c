@@ -131,6 +131,7 @@ int main() {
         free(address);
         close(sockfd);
         exit(EXIT_FAILURE);
+        return 1;
     }
 
     listenAndPrintCreateThread(sockfd);

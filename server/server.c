@@ -114,6 +114,7 @@ void *recvAndPrint(void *clientConnection) {
     for (int i = 0; i < MAX_CONNECTIONS; i++) {
         if (acceptedConnections[i].clientSockFD == clientConnectionCasted->clientSockFD) {
             acceptedConnections[i].accepted = false;
+            acceptedConnections[i].name[0] = 0; // reset name
         }
     }
     acceptedConnectionCount--;
