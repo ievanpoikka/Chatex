@@ -24,7 +24,7 @@ void *listenAndPrint(void *sockfd) {
     int sockfd_int = *(int *) sockfd;
 
     while (true) {
-        ssize_t recvCount = recv(sockfd_int, buf, sizeof(buf), 0);
+        ssize_t recvCount = recv(sockfd_int, buf, sizeof(buf) - 1, 0);
 
         if (recvCount > 0) {
             buf[recvCount] = 0; // appending null byte to print
